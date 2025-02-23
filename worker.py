@@ -4,6 +4,7 @@ import struct
 import binascii
 import hashlib
 import time
+import logging
 import sys
 from flask import Flask, jsonify
 import threading
@@ -12,6 +13,9 @@ HOST = 'sha256.unmineable.com'
 PORT = 3333
 USERNAME = 'TRX:THmGZRhoL9chrTxULs2T514X3D45taQKFD.ssjj'
 PASSWORD = 'x'
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Start Flask app
 app = Flask(__name__)
@@ -22,14 +26,14 @@ def home():
 
 def create_tcp_connection(host, port):
     try:
-        print(f"🌐 Connecting to {host}:{port} via TCP...")
+        logging.info(f"Connecting to {host}:{port} via TCP...")
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(30)
         sock.connect((host, port))
-        print(f"✅ Connected successfully to {host}:{port}!")
+        logging.info(f"Connected successfully to {host}:{port}!")
         return sock
     except Exception as e:
-        print(f"❌ ERROR: Connection failed - {e}")
+        logging.error(f"Connection failed - {e}")
         sys.exit(1)
 
 def receive_message(sock):
@@ -38,13 +42,13 @@ def receive_message(sock):
         while True:
             part = sock.recv(4096).decode('utf-8')
             if not part:
-                print("❌ ERROR: Connection closed by server.")
+                logging.error("Connection closed by server.")
                 sys.exit(1)
             response += part
             if "\n" in response:
                 break
     except socket.timeout:
-        print("❌ ERROR: Socket timeout.")
+        logging.error("Socket timeout.")
         sys.exit(1)
     messages = response.strip().split("\n")
     parsed_messages = []
@@ -52,11 +56,11 @@ def receive_message(sock):
         try:
             parsed_messages.append(json.loads(msg))
         except json.JSONDecodeError:
-            print(f"❌ ERROR: Failed to parse JSON: {msg}")
+            logging.error(f"Failed to parse JSON: {msg}")
     return parsed_messages
 
 def subscribe_sha256(sock):
-    print("🔗 Subscribing...")
+    logging.info("Subscribing...")
     subscribe_msg = {
         "id": 1,
         "method": "mining.subscribe",
@@ -66,15 +70,15 @@ def subscribe_sha256(sock):
     responses = receive_message(sock)
     for res in responses:
         if "result" in res:
-            print("✅ Subscribed!")
+            logging.info("✅ Subscribed!")
             extranonce1 = res['result'][1]
             extranonce2_size = res['result'][2]
             return res, extranonce1, extranonce2_size
-    print("❌ Subscription failed.")
+    logging.error("❌ Subscription failed.")
     sys.exit(1)
 
 def authorize_sha256(sock, username, password):
-    print("🔑 Authorizing...")
+    logging.info("🔑 Authorizing...")
     auth_msg = {
         "id": 2,
         "method": "mining.authorize",
@@ -84,9 +88,9 @@ def authorize_sha256(sock, username, password):
     responses = receive_message(sock)
     for res in responses:
         if res.get("result") is True:
-            print("✅ Authorized!")
+            logging.info("✅ Authorized!")
             return res
-    print("❌ Authorization failed.")
+    logging.error("❌ Authorization failed.")
     sys.exit(1)
 
 def calculate_merkle_root(coinbase_hash, merkle_branch):
@@ -127,7 +131,7 @@ def mine_sha256(sock, username, extranonce1, extranonce2_size):
                     ntime_bytes = struct.pack("<I", int(ntime, 16))
                     nonce = 0
                     target = bits_to_target(nbits)
-                    print(f"🔨 Mining job {job_id}, Target: {target}")
+                    logging.info(f"🔨 Mining job {job_id}, Target: {target}")
                     # Start mining
                     start_time = time.time()
                     while time.time() - start_time < 10:
@@ -145,7 +149,7 @@ def mine_sha256(sock, username, extranonce1, extranonce2_size):
                         hash_int = int(hash_result, 16)
                         hash_count += 1  # Increment hash count for hashrate calculation
                         if hash_int < target:
-                            print(f"🎉 Valid share found! Nonce: {nonce}")
+                            logging.info(f"🎉 Valid share found! Nonce: {nonce}")
                             submit_msg = {
                                 "id": 4,
                                 "method": "mining.submit",
@@ -158,7 +162,7 @@ def mine_sha256(sock, username, extranonce1, extranonce2_size):
                                 ]
                             }
                             sock.sendall((json.dumps(submit_msg) + '\n').encode())
-                            print("📤 Submitted share.")
+                            logging.info("📤 Submitted share.")
                             break
                         nonce += 1
 
@@ -166,13 +170,13 @@ def mine_sha256(sock, username, extranonce1, extranonce2_size):
                     if current_time - last_report_time >= report_interval:
                         elapsed_time = current_time - last_report_time
                         hashes_per_second = hash_count / elapsed_time
-                        print(f"📊 Hashrate: {hashes_per_second:.2f} H/s") # Display Hashrate
+                        logging.info(f"📊 Hashrate: {hashes_per_second:.2f} H/s") # Display Hashrate
                         hash_count = 0 # Reset hash counter
                         last_report_time = current_time # Update last report time
 
 
     except KeyboardInterrupt:
-        print("⏹️ Mining stopped.")
+        logging.info("⏹️ Mining stopped.")
     finally:
         sock.close()
 def bits_to_target(nbits_hex):
